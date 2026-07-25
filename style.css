@@ -99,3 +99,32 @@ html, body {
     bottom: 5vh;
   }
 }
+
+/* Debug panel — shows real errors/logs on screen, hidden until something is written to it */
+#debugPanel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  max-width: 100vw;
+  max-height: 50vh;
+  overflow-y: auto;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.85);
+  color: #00f5ff;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-bottom: 1px solid rgba(0, 245, 255, 0.3);
+  display: none;
+}
+
+#debugPanel.visible {
+  display: block;
+}
+
+#debugPanel .err {
+  color: #ff5566;
+}
