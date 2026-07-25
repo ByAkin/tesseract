@@ -56,7 +56,7 @@ const state = {
   initialized: false,
 };
 
-const SMOOTHING = 0.12;        // position lerp factor (lower = smoother/slower)
+const SMOOTHING = 0.08;        // position lerp factor (lower = smoother/slower)
 const SCALE_LERP = 0.08;       // fade in/out speed
 const ROTATION_LERP = 0.04;    // easing for rotation speed changes
 const HAND_TIMEOUT = 500;      // ms before we consider hand "lost"
@@ -453,13 +453,13 @@ function onHandResults(results) {
   // Convert normalized [0,1] MediaPipe coords -> Three.js world space.
   // The video is CSS-mirrored (scaleX(-1)), so mirror X here to match.
   const mirroredX = 1 - cx;
-  const worldX = (mirroredX - 0.5) * 2 * frustumWidthAtDepth(0);
+  const worldX = ((mirroredX - 0.5) * 2 * frustumWidthAtDepth(0)) - 0.28;
   const worldY = -(cy - 0.5) * 2 * frustumHeightAtDepth(0);
    const cz = palmPts.reduce((s, p) => s + p.z, 0) / palmPts.length;
 const worldZ = -cz * 4;
 
 state.targetX = worldX;
-state.targetY = worldY + 0.45;
+state.targetY = worldY + 0.18;
 state.targetZ = worldZ;
    
   // Fist detection: fingertips are close to their MCP/PIP joints (curled)
