@@ -200,7 +200,7 @@ function onResize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  composer.setSize(w, h);
+  if (composer) composer.setSize(w, h);
 }
 
 /* ============================================================
@@ -577,7 +577,11 @@ function animate() {
     core.rotation.y += dt * 0.6;
   }
 
-  composer.render();
+  if (composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
 
   updateStatusText(handActive);
 }
