@@ -10,29 +10,44 @@ const loaderEl  = document.getElementById('loader');
 const debugEl   = document.getElementById('debugPanel');
 
 /* ---------- Debug logging (on-screen + console) ---------- */
+const MAX_DEBUG_LINES = 5;
+
 function dlog(msg) {
   console.log('[TESSERACT]', msg);
-  debugEl.classList.add('visible');
   const line = document.createElement('div');
   line.textContent = `${new Date().toISOString().slice(11, 23)}  ${msg}`;
   debugEl.appendChild(line);
+  while (debugEl.children.length > MAX_DEBUG_LINES) debugEl.removeChild(debugEl.firstChild);
+  debugEl.scrollTop = debugEl.scrollHeight;
 }
 
 function derror(label, err) {
   console.error(label, err);
-  debugEl.classList.add('visible');
   const line = document.createElement('div');
   line.className = 'err';
-  const name = err && err.name ? err.name : '(no name)';
+  const name    = err && err.name    ? err.name    : '(no name)';
   const message = err && err.message ? err.message : String(err);
-  const stack = err && err.stack ? err.stack : '(no stack)';
+  const stack   = err && err.stack   ? err.stack   : '(no stack)';
   line.textContent =
     `${new Date().toISOString().slice(11, 23)}  ERROR — ${label}\n` +
     `  name: ${name}\n` +
     `  message: ${message}\n` +
     `  stack: ${stack}`;
   debugEl.appendChild(line);
+  while (debugEl.children.length > MAX_DEBUG_LINES) debugEl.removeChild(debugEl.firstChild);
+  debugEl.scrollTop = debugEl.scrollHeight;
 }
+
+/* Toggle button — injected via JS so HTML stays untouched */
+(function createDebugToggle() {
+  const btn = document.createElement('button');
+  btn.id = 'debugToggle';
+  btn.textContent = 'Debug';
+  btn.addEventListener('click', () => {
+    debugEl.classList.toggle('visible');
+  });
+  document.body.appendChild(btn);
+})();
 
 dlog('Script started');
 
@@ -160,20 +175,32 @@ function initThree() {
   buildTesseract();
   buildParticles();
 
-// Rendering without post-processing (temporary)
-composer = null;
+  // Bloom post-processing — r128 UMD addons are globals, NOT on THREE namespace.
+  // Wrapped in try/catch so a missing CDN asset never crashes the app.
+  try {
+    composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.4, 0.6, 0.15
+    );
+    composer.addPass(bloomPass);
+    dlog('Bloom initialized');
+  } catch (e) {
+    dlog('Bloom unavailable, using direct render: ' + e.message);
+    composer = null;
+  }
 
+  window.addEventListener('resize', onResize);
 }
 
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-renderer.setSize(w, h);
-
-if (composer) {
-    composer.setSize(w, h);
-}
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
 }
 
 /* ============================================================
@@ -426,7 +453,7 @@ function initHandTracking() {
 
 /* Landmark indices we care about */
 const WRIST = 0;
-const INDEX_MCP = 5, PINKY_MCP = 17, MIDDLE_MCP = 9;
+const INDEX_MCP = 5, MIDDLE_MCP = 9, RING_MCP = 13, PINKY_MCP = 17;
 const FINGERTIPS = [8, 12, 16, 20];   // index, middle, ring, pinky tips
 const FINGER_PIPS = [6, 10, 14, 18];  // corresponding lower joints
 
@@ -440,25 +467,22 @@ function onHandResults(results) {
   state.handVisible = true;
   state.lastSeenTime = performance.now();
 
-  // Palm center = average of wrist + finger MCP joints
-  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP].map(i => landmarks[i]);
+  // Palm center = average of wrist + all four finger MCP joints (5 points)
+  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP].map(i => landmarks[i]);
   const cx = palmPts.reduce((s, p) => s + p.x, 0) / palmPts.length;
   const cy = palmPts.reduce((s, p) => s + p.y, 0) / palmPts.length;
-  const cz = palmPts.reduce((s, p) => s + p.z, 0) / palmPts.length;
 
   // Convert normalized [0,1] MediaPipe coords -> Three.js world space.
-  // MediaPipe x is already mirrored relative to a mirrored display since
-  // we flip the video with CSS; landmarks come from the raw (unmirrored)
-  // frame, so we mirror x here to match the on-screen mirrored video.
+  // The video is CSS-mirrored (scaleX(-1)), so mirror X here to match.
   const mirroredX = 1 - cx;
   const worldX = (mirroredX - 0.5) * 2 * frustumWidthAtDepth(0);
   const worldY = -(cy - 0.5) * 2 * frustumHeightAtDepth(0);
-  const worldZ = -cz * 4;
 
-  // Hover the hologram above the palm
+  // Place hologram above the palm centre in screen-Y (negative = up in MediaPipe).
+  // 0.45 world units ≈ 5-8 cm at this camera distance. Z fixed at 0 for stability.
   state.targetX = worldX;
-  state.targetY = worldY + 0.55;
-  state.targetZ = worldZ;
+  state.targetY = worldY + 0.45;
+  state.targetZ = 0;
 
   // Fist detection: fingertips are close to their MCP/PIP joints (curled)
   state.isFist = detectFist(landmarks);
@@ -553,11 +577,7 @@ function animate() {
     core.rotation.y += dt * 0.6;
   }
 
-if (composer) {
-    composer.render();
-} else {
-    renderer.render(scene, camera);
-}
+  composer.render();
 
   updateStatusText(handActive);
 }
