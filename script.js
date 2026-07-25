@@ -160,7 +160,7 @@ function initThree() {
   buildTesseract();
   buildParticles();
 
-  // Bloom post-processing
+// Bloom post-processing
   // Note: the r128 UMD build of these addons attaches classes to the global
   // scope (window.EffectComposer etc.), not to the THREE namespace.
   composer = new EffectComposer(renderer);
