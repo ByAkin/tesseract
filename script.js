@@ -7,6 +7,34 @@ const videoEl   = document.getElementById('webcam');
 const canvasEl  = document.getElementById('scene');
 const statusEl  = document.getElementById('status');
 const loaderEl  = document.getElementById('loader');
+const debugEl   = document.getElementById('debugPanel');
+
+/* ---------- Debug logging (on-screen + console) ---------- */
+function dlog(msg) {
+  console.log('[TESSERACT]', msg);
+  debugEl.classList.add('visible');
+  const line = document.createElement('div');
+  line.textContent = `${new Date().toISOString().slice(11, 23)}  ${msg}`;
+  debugEl.appendChild(line);
+}
+
+function derror(label, err) {
+  console.error(label, err);
+  debugEl.classList.add('visible');
+  const line = document.createElement('div');
+  line.className = 'err';
+  const name = err && err.name ? err.name : '(no name)';
+  const message = err && err.message ? err.message : String(err);
+  const stack = err && err.stack ? err.stack : '(no stack)';
+  line.textContent =
+    `${new Date().toISOString().slice(11, 23)}  ERROR — ${label}\n` +
+    `  name: ${name}\n` +
+    `  message: ${message}\n` +
+    `  stack: ${stack}`;
+  debugEl.appendChild(line);
+}
+
+dlog('Script started');
 
 /* ---------- Global state ---------- */
 const state = {
@@ -31,13 +59,27 @@ const HAND_TIMEOUT = 500;      // ms before we consider hand "lost"
    1. WEBCAM SETUP
    ============================================================ */
 async function initWebcam() {
-  // Verify the browser actually exposes the media devices API before using it
+  dlog('navigator exists: ' + (typeof navigator !== 'undefined'));
+  dlog('navigator.mediaDevices exists: ' + !!(navigator && navigator.mediaDevices));
+  dlog('navigator.mediaDevices.getUserMedia exists: ' +
+    !!(navigator && navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
+
+  // Verify the browser actually exposes the media devices API before using it.
+  // Note: getUserMedia requires a secure context (https:// or localhost) —
+  // if this is false on a non-localhost http:// origin, that IS the root cause.
+  dlog('window.isSecureContext: ' + window.isSecureContext);
+
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    const err = new Error('getUserMedia is not supported in this browser/context');
+    const err = new Error(
+      'getUserMedia is not available. This usually means the page is not ' +
+      'served from a secure context (https:// or http://localhost). ' +
+      'Current origin: ' + window.location.origin
+    );
     err.name = 'MediaDevicesUnsupported';
     throw err;
   }
 
+  dlog('Requesting camera...');
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -49,23 +91,37 @@ async function initWebcam() {
       audio: false,
     });
   } catch (err) {
-    console.error(err);
-    console.error('getUserMedia failed:', err.name, '-', err.message);
+    derror('getUserMedia() threw', err);
+    throw err;
+  }
+  dlog('Camera stream received (id: ' + stream.id + ', tracks: ' + stream.getVideoTracks().length + ')');
+
+  try {
+    videoEl.srcObject = stream;
+    dlog('video.srcObject assigned');
+  } catch (err) {
+    derror('assigning video.srcObject threw', err);
     throw err;
   }
 
-  // srcObject must be set before play() is called
-  videoEl.srcObject = stream;
-
   return new Promise((resolve, reject) => {
     videoEl.onloadedmetadata = () => {
+      dlog('loadedmetadata fired (videoWidth=' + videoEl.videoWidth + ', videoHeight=' + videoEl.videoHeight + ')');
       videoEl.play()
-        .then(() => resolve())
+        .then(() => {
+          dlog('video.play() succeeded');
+          resolve();
+        })
         .catch((err) => {
-          console.error(err);
-          console.error('video.play() failed:', err.name, '-', err.message);
+          derror('video.play() threw', err);
           reject(err);
         });
+    };
+    // Also catch cases where the <video> element itself errors out
+    videoEl.onerror = (event) => {
+      const mediaErr = videoEl.error;
+      derror('video element error event', mediaErr || event);
+      reject(mediaErr || new Error('video element fired an error event'));
     };
   });
 }
@@ -79,6 +135,7 @@ let tesseractLines, tesseractEdgeMaterial;
 let clock = new THREE.Clock();
 
 function initThree() {
+  dlog('Initializing Three.js scene...');
   renderer = new THREE.WebGLRenderer({
     canvas: canvasEl,
     alpha: true,
@@ -283,33 +340,96 @@ function updateParticles(dt, orbitSpeedMultiplier) {
    5. MEDIAPIPE HANDS
    ============================================================ */
 function initHandTracking() {
-  const hands = new Hands({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+  dlog('Initializing MediaPipe Hands...');
+  dlog('typeof Hands: ' + typeof Hands + ', typeof Camera: ' + typeof Camera);
+
+  if (typeof Hands === 'undefined') {
+    const err = new Error(
+      'The global "Hands" class is undefined — the MediaPipe hands.js script ' +
+      'tag in index.html did not load or execute. Check the Network tab for ' +
+      'https://cdnjs.cloudflare.com... or the @mediapipe/hands script for a ' +
+      'non-200 HTTP status or a blocked/ad-blocked request.'
+    );
+    err.name = 'MediaPipeScriptNotLoaded';
+    throw err;
+  }
+  if (typeof Camera === 'undefined') {
+    const err = new Error(
+      'The global "Camera" class is undefined — the MediaPipe camera_utils.js ' +
+      'script tag in index.html did not load or execute.'
+    );
+    err.name = 'MediaPipeScriptNotLoaded';
+    throw err;
+  }
+
+  let hands;
+  try {
+    hands = new Hands({
+      locateFile: (file) => {
+        const url = `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        // Verify each MediaPipe asset actually loads; report exact URL + HTTP status on failure
+        fetch(url, { method: 'HEAD' })
+          .then((res) => {
+            if (!res.ok) {
+              derror('MediaPipe asset fetch failed', new Error(
+                `URL: ${url} — HTTP status: ${res.status} ${res.statusText}`
+              ));
+            } else {
+              dlog('MediaPipe asset OK (' + res.status + '): ' + url);
+            }
+          })
+          .catch((err) => {
+            derror('MediaPipe asset fetch threw (network error) for URL: ' + url, err);
+          });
+        return url;
+      },
+    });
+  } catch (err) {
+    derror('new Hands(...) threw', err);
+    throw err;
+  }
+
+  try {
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6,
+    });
+    dlog('MediaPipe Hands options set');
+  } catch (err) {
+    derror('hands.setOptions(...) threw', err);
+    throw err;
+  }
+
+  hands.onResults((results) => {
+    try {
+      onHandResults(results);
+    } catch (err) {
+      derror('onHandResults() threw', err);
+    }
   });
 
-  hands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence: 0.6,
-  });
+  dlog('MediaPipe Hands initialized');
 
-  hands.onResults(onHandResults);
-
-  const mpCamera = new Camera(videoEl, {
-    onFrame: async () => {
-      try {
-        await hands.send({ image: videoEl });
-      } catch (err) {
-        console.error(err);
-        console.error('MediaPipe frame processing failed:', err.name, '-', err.message);
-      }
-    },
-    width: 1280,
-    height: 720,
-  });
-  mpCamera.start();
+  try {
+    const mpCamera = new Camera(videoEl, {
+      onFrame: async () => {
+        try {
+          await hands.send({ image: videoEl });
+        } catch (err) {
+          derror('hands.send() threw during frame processing', err);
+        }
+      },
+      width: 1280,
+      height: 720,
+    });
+    mpCamera.start();
+    dlog('Hand detection started (MediaPipe Camera running)');
+  } catch (err) {
+    derror('MediaPipe Camera construction/start threw', err);
+    throw err;
+  }
 }
 
 /* Landmark indices we care about */
@@ -468,39 +588,63 @@ function updateStatusText(handActive) {
    8. BOOTSTRAP
    ============================================================ */
 async function main() {
+  dlog('main() started');
+
   try {
     initThree();
+    dlog('Three.js initialized');
   } catch (err) {
-    console.error(err);
-    console.error('Three.js init failed:', err.name, '-', err.message);
-    statusEl.textContent = 'RENDERER INIT FAILED';
+    derror('Three.js init failed', err);
+    statusEl.textContent = 'RENDERER INIT FAILED — see debug panel';
     loaderEl.classList.add('hidden');
     return;
   }
 
   try {
     await initWebcam();
+    dlog('Webcam fully initialized');
   } catch (err) {
-    console.error(err);
-    console.error('Camera init failed:', err.name, '-', err.message);
-    statusEl.textContent = 'CAMERA ACCESS DENIED';
+    // Report the ACTUAL error, not a generic assumption. Only getUserMedia
+    // itself throwing a permission-type error means access was denied —
+    // every other failure is reported with its real name/message here.
+    derror('Camera initialization failed', err);
+    const name = err && err.name ? err.name : 'UnknownError';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      statusEl.textContent = 'CAMERA PERMISSION DENIED — see debug panel';
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      statusEl.textContent = 'NO CAMERA DEVICE FOUND — see debug panel';
+    } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+      statusEl.textContent = 'CAMERA IN USE BY ANOTHER APP — see debug panel';
+    } else if (name === 'MediaDevicesUnsupported') {
+      statusEl.textContent = 'CAMERA API UNAVAILABLE (insecure origin?) — see debug panel';
+    } else {
+      statusEl.textContent = 'CAMERA INIT ERROR (' + name + ') — see debug panel';
+    }
     loaderEl.classList.add('hidden');
     return; // camera did not start — do not proceed to hand tracking
   }
 
   try {
     initHandTracking();
+    dlog('MediaPipe / hand tracking initialized');
   } catch (err) {
-    console.error(err);
-    console.error('MediaPipe init failed:', err.name, '-', err.message);
-    statusEl.textContent = 'HAND TRACKING FAILED TO LOAD';
+    derror('MediaPipe initialization failed', err);
+    statusEl.textContent = 'HAND TRACKING FAILED TO LOAD — see debug panel';
     loaderEl.classList.add('hidden');
     return; // camera works, but MediaPipe failed — report that distinctly
   }
 
   loaderEl.classList.add('hidden');
   statusEl.textContent = 'SHOW YOUR PALM';
+  dlog('Bootstrap complete — starting render loop');
   animate();
 }
+
+window.addEventListener('error', (event) => {
+  derror('Uncaught global error', event.error || new Error(event.message));
+});
+window.addEventListener('unhandledrejection', (event) => {
+  derror('Unhandled promise rejection', event.reason);
+});
 
 main();
