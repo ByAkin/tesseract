@@ -161,11 +161,13 @@ function initThree() {
   buildParticles();
 
   // Bloom post-processing
-  composer = new THREE.EffectComposer(renderer);
-  const renderPass = new THREE.RenderPass(scene, camera);
+  // Note: the r128 UMD build of these addons attaches classes to the global
+  // scope (window.EffectComposer etc.), not to the THREE namespace.
+  composer = new EffectComposer(renderer);
+  const renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
 
-  const bloomPass = new THREE.UnrealBloomPass(
+  const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     1.4,   // strength
     0.6,   // radius
