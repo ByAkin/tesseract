@@ -163,7 +163,6 @@ function initThree() {
 // Rendering without post-processing (temporary)
 composer = null;
 
-  window.addEventListener('resize', onResize);
 }
 
 function onResize() {
