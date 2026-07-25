@@ -160,20 +160,8 @@ function initThree() {
   buildTesseract();
   buildParticles();
 
-// Bloom post-processing
-  // Note: the r128 UMD build of these addons attaches classes to the global
-  // scope (window.EffectComposer etc.), not to the THREE namespace.
-  composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.4,   // strength
-    0.6,   // radius
-    0.15   // threshold
-  );
-  composer.addPass(bloomPass);
+// Rendering without post-processing (temporary)
+composer = null;
 
   window.addEventListener('resize', onResize);
 }
@@ -182,8 +170,11 @@ function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
-  composer.setSize(w, h);
+renderer.setSize(w, h);
+
+if (composer) {
+    composer.setSize(w, h);
+}
 }
 
 /* ============================================================
@@ -563,7 +554,11 @@ function animate() {
     core.rotation.y += dt * 0.6;
   }
 
-  composer.render();
+if (composer) {
+    composer.render();
+} else {
+    renderer.render(scene, camera);
+}
 
   updateStatusText(handActive);
 }
