@@ -459,7 +459,7 @@ function onHandResults(results) {
 const worldZ = -cz * 4;
 
 state.targetX = worldX;
-state.targetY = worldY + 0.75;
+state.targetY = worldY + 0.45;
 state.targetZ = worldZ;
    
   // Fist detection: fingertips are close to their MCP/PIP joints (curled)
