@@ -39,15 +39,6 @@ function derror(label, err) {
 }
 
 /* Toggle button — injected via JS so HTML stays untouched */
-(function createDebugToggle() {
-  const btn = document.createElement('button');
-  btn.id = 'debugToggle';
-  btn.textContent = 'Debug';
-  btn.addEventListener('click', () => {
-    debugEl.classList.toggle('visible');
-  });
-  document.body.appendChild(btn);
-})();
 
 dlog('Script started');
 
@@ -177,20 +168,7 @@ function initThree() {
 
   // Bloom post-processing — r128 UMD addons are globals, NOT on THREE namespace.
   // Wrapped in try/catch so a missing CDN asset never crashes the app.
-  try {
-    composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-    const bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(window.innerWidth, window.innerHeight),
-      1.4, 0.6, 0.15
-    );
-    composer.addPass(bloomPass);
-    dlog('Bloom initialized');
-  } catch (e) {
-    dlog('Bloom unavailable, using direct render: ' + e.message);
-    composer = null;
-  }
+composer = null;
 
   window.addEventListener('resize', onResize);
 }
@@ -468,7 +446,7 @@ function onHandResults(results) {
   state.lastSeenTime = performance.now();
 
   // Palm center = average of wrist + all four finger MCP joints (5 points)
-  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP].map(i => landmarks[i]);
+  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP].map(i => landmarks[i]);
   const cx = palmPts.reduce((s, p) => s + p.x, 0) / palmPts.length;
   const cy = palmPts.reduce((s, p) => s + p.y, 0) / palmPts.length;
 
@@ -478,12 +456,13 @@ function onHandResults(results) {
   const worldX = (mirroredX - 0.5) * 2 * frustumWidthAtDepth(0);
   const worldY = -(cy - 0.5) * 2 * frustumHeightAtDepth(0);
 
-  // Place hologram above the palm centre in screen-Y (negative = up in MediaPipe).
-  // 0.45 world units ≈ 5-8 cm at this camera distance. Z fixed at 0 for stability.
-  state.targetX = worldX;
-  state.targetY = worldY + 0.45;
-  state.targetZ = 0;
+const cz = palmPts.reduce((s, p) => s + p.z, 0) / palmPts.length;
+const worldZ = -cz * 4;
 
+state.targetX = worldX;
+state.targetY = worldY + 0.35;
+state.targetZ = worldZ;
+   
   // Fist detection: fingertips are close to their MCP/PIP joints (curled)
   state.isFist = detectFist(landmarks);
 }
