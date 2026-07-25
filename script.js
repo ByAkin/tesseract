@@ -31,17 +31,42 @@ const HAND_TIMEOUT = 500;      // ms before we consider hand "lost"
    1. WEBCAM SETUP
    ============================================================ */
 async function initWebcam() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: 'user',
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    },
-    audio: false,
-  });
+  // Verify the browser actually exposes the media devices API before using it
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const err = new Error('getUserMedia is not supported in this browser/context');
+    err.name = 'MediaDevicesUnsupported';
+    throw err;
+  }
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    });
+  } catch (err) {
+    console.error(err);
+    console.error('getUserMedia failed:', err.name, '-', err.message);
+    throw err;
+  }
+
+  // srcObject must be set before play() is called
   videoEl.srcObject = stream;
-  return new Promise((resolve) => {
-    videoEl.onloadedmetadata = () => resolve();
+
+  return new Promise((resolve, reject) => {
+    videoEl.onloadedmetadata = () => {
+      videoEl.play()
+        .then(() => resolve())
+        .catch((err) => {
+          console.error(err);
+          console.error('video.play() failed:', err.name, '-', err.message);
+          reject(err);
+        });
+    };
   });
 }
 
@@ -274,7 +299,12 @@ function initHandTracking() {
 
   const mpCamera = new Camera(videoEl, {
     onFrame: async () => {
-      await hands.send({ image: videoEl });
+      try {
+        await hands.send({ image: videoEl });
+      } catch (err) {
+        console.error(err);
+        console.error('MediaPipe frame processing failed:', err.name, '-', err.message);
+      }
     },
     width: 1280,
     height: 720,
@@ -440,16 +470,37 @@ function updateStatusText(handActive) {
 async function main() {
   try {
     initThree();
-    await initWebcam();
-    initHandTracking();
-    loaderEl.classList.add('hidden');
-    statusEl.textContent = 'SHOW YOUR PALM';
-    animate();
   } catch (err) {
     console.error(err);
+    console.error('Three.js init failed:', err.name, '-', err.message);
+    statusEl.textContent = 'RENDERER INIT FAILED';
+    loaderEl.classList.add('hidden');
+    return;
+  }
+
+  try {
+    await initWebcam();
+  } catch (err) {
+    console.error(err);
+    console.error('Camera init failed:', err.name, '-', err.message);
     statusEl.textContent = 'CAMERA ACCESS DENIED';
     loaderEl.classList.add('hidden');
+    return; // camera did not start — do not proceed to hand tracking
   }
+
+  try {
+    initHandTracking();
+  } catch (err) {
+    console.error(err);
+    console.error('MediaPipe init failed:', err.name, '-', err.message);
+    statusEl.textContent = 'HAND TRACKING FAILED TO LOAD';
+    loaderEl.classList.add('hidden');
+    return; // camera works, but MediaPipe failed — report that distinctly
+  }
+
+  loaderEl.classList.add('hidden');
+  statusEl.textContent = 'SHOW YOUR PALM';
+  animate();
 }
 
 main();
