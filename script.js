@@ -56,7 +56,7 @@ const state = {
   initialized: false,
 };
 
-const SMOOTHING = 0.18;        // position lerp factor (lower = smoother/slower)
+const SMOOTHING = 0.12;        // position lerp factor (lower = smoother/slower)
 const SCALE_LERP = 0.08;       // fade in/out speed
 const ROTATION_LERP = 0.04;    // easing for rotation speed changes
 const HAND_TIMEOUT = 500;      // ms before we consider hand "lost"
@@ -446,7 +446,7 @@ function onHandResults(results) {
   state.lastSeenTime = performance.now();
 
   // Palm center = average of wrist + all four finger MCP joints (5 points)
-  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP].map(i => landmarks[i]);
+  const palmPts = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP].map(i => landmarks[i]);
   const cx = palmPts.reduce((s, p) => s + p.x, 0) / palmPts.length;
   const cy = palmPts.reduce((s, p) => s + p.y, 0) / palmPts.length;
 
@@ -455,12 +455,11 @@ function onHandResults(results) {
   const mirroredX = 1 - cx;
   const worldX = (mirroredX - 0.5) * 2 * frustumWidthAtDepth(0);
   const worldY = -(cy - 0.5) * 2 * frustumHeightAtDepth(0);
-
-const cz = palmPts.reduce((s, p) => s + p.z, 0) / palmPts.length;
+   const cz = palmPts.reduce((s, p) => s + p.z, 0) / palmPts.length;
 const worldZ = -cz * 4;
 
 state.targetX = worldX;
-state.targetY = worldY + 0.35;
+state.targetY = worldY + 0.75;
 state.targetZ = worldZ;
    
   // Fist detection: fingertips are close to their MCP/PIP joints (curled)
